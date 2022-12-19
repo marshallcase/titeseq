@@ -13,6 +13,18 @@ from scipy.optimize import curve_fit
 from multiprocessing import Pool
 from functools import partial
 
+#sequences of variants - all padded with ' ' at beginning to align mutations with sequence
+B1351_seq      =  ' NITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGNIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVKGFNCYFPLQSYGFQPTYGVGYQPYRVVVLSFELLHAPATVCGPKKST'
+E484K_seq      =  ' NITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVKGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKST'
+N5O1Y_seq      =  ' NITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVEGFNCYFPLQSYGFQPTYGVGYQPYRVVVLSFELLHAPATVCGPKKST'
+Wuhan_Hu_1_seq =  ' NITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVEGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKST'
+WT_seq         =  ' NITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYLYRLFRKSNLKPFERDISTEIYQAGSTPCNGVEGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKST'
+delta_seq      =  ' NITNLCPFGEVFNATRFASVYAWNRKRISNCVADYSVLYNSASFSTFKCYGVSPTKLNDLCFTNVYADSFVIRGDEVRQIAPGQTGKIADYNYKLPDDFTGCVIAWNSNNLDSKVGGNYNYRYRLFRKSNLKPFERDISTEIYQAGSKPCNGVEGFNCYFPLQSYGFQPTNGVGYQPYRVVVLSFELLHAPATVCGPKKST'
+
+ids = ['B1351','E484K','Wuhan_Hu_1','N501Y','Delta']
+sequences = [B1351_seq,E484K_seq,Wuhan_Hu_1_seq,N5O1Y_seq,delta_seq]
+seq_dict = dict(zip(ids,sequences))
+
 def preprocess(values_counts,values,index,columns):
     '''
     preprocess: convert dataframe from the following format:
@@ -251,7 +263,7 @@ def curveFit(fit_data,barcode,concs,num_bins=4,verbose=False):
             print('spurious fit')
         return np.zeros(3),np.zeros((3,3))
 
-def plotCurveFit(fit_data,barcode,concs,num_bins=4):
+def plotCurveFit(fit_data,barcode,concs,num_bins=4,ax=None):
     '''
     
 
@@ -265,6 +277,8 @@ def plotCurveFit(fit_data,barcode,concs,num_bins=4):
         concentration vector
     num_bins : int, optional
         number of bins, default 4
+    ax: ax
+        axes to plot on, default None
 
     Returns
     -------
@@ -272,7 +286,9 @@ def plotCurveFit(fit_data,barcode,concs,num_bins=4):
         axes object of plot
 
     '''
-    ax = plotData(fit_data,barcode,concs,num_bins)
+    if ax is None:
+        _,ax = plt.subplots()
+    ax = plotData(fit_data,barcode,concs,num_bins,ax=ax)
     popt,pcov = curveFit(fit_data,barcode,concs,num_bins)
     x = np.array(concs[1:])
     y = fit_data.loc[barcode].values[1:]
@@ -354,15 +370,150 @@ def plotDatasetHistogram(fit_params,concs,n_bins=50,ax=None,**kwargs):
     ax: ax
         axes plotted on
     '''
+    if ax is None:
+        _,ax = plt.subplots()
     x = np.array(concs[1:])
     threshold = 0.1*np.ma.masked_equal(x, 0.0, copy=False).min()
     good_fit_params = fit_params.loc[fit_params['Kd'] > threshold]['Kd']
     logbins = np.logspace(np.log10(good_fit_params.min()), np.log10(good_fit_params.max()), 50)
-    fig,ax = plt.subplots(figsize=(10,10))
     ax.hist(good_fit_params, bins=logbins)
     ax.set_xscale('log')
     ax.set_ylabel('Count')
     ax.set_xlabel('Affinity [M]')
     return ax
         
-     
+def mutate_sequence(background,aa_substitutions,verbose=False):
+    '''
+    mutate_sequence: given a background protein sequence, generate a new one with mutations in a string like: [original token][position][new token]
+    for example 'A155E' or 'A155E S225P'
+    
+    Parameters
+    ----------
+    background: string
+        name of background for indexing in seq_dict
+    aa_substitutions : string
+        mutations to make, in a string
+    verbose : boolean
+        whether to output errors, default False
+    
+    Returns
+    -------
+    new_seq: string
+        new sequence with mutations incorporated
+    
+    '''
+    try: #catch entry not in dictionary
+        new_seq = seq_dict[background]
+    except ValueError:
+        if verbose:
+            print('variant sequence not found in dictionary')
+        return ''
+    except KeyError:
+        if verbose:
+            print('variant sequence not found in dictionary')
+        return ''
+    
+    try: #catch np.NaN submitted 
+        muts = aa_substitutions.split(' ')
+    except AttributeError:
+        if verbose:
+            print('no mutations')
+        return ''
+    
+    if (len(muts) == 0):
+        return ''
+    
+    for i,m in enumerate(muts): #iterate through the mutations and change the string
+        wt = m[0]
+        mut = m[-1]
+        pos = int(m[1:-1])
+        if pos > len(new_seq):
+            if verbose:
+                print('invalid position, skipping')
+            pass
+        else:
+            new_seq = new_seq[:pos] + mut + new_seq[pos + 1:]
+    return new_seq
+
+def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutoff,zero_tolerance=False,isolated_replicates=False):
+    '''
+    generateBinaryDataset: given a titeseq dataset, convert it to a binary dataset based on its sequencing type and various cutoff parameters
+    
+    Parameters
+    ----------
+    
+    input_data: dataframe
+        dataframe with the sequence as the index and two columns (per replicate if illumina), high_R and low_R where R is each replicate lettered from A->Z
+    data_type: str
+        if PacBio long read coupled with Illumina for barcode depth (like Bloom 2022), 'pacbio'
+        if pure Illumina (like Kinney 2016), 'illumina'
+    replicate_cutoff: tuple of (float,float)
+        determines how strict to be for determination of positive and negative dataset respectively based on # of replicates
+        if data_type = 'illumina', this is based on the number of replicates of the entire illumina dataset since identical sequences are pooled
+        if data_type = 'pacbio', this can be any number depending on how many identical sequences were prepared in the barcoding process
+    percentile_cutoff: tuple of (float,float)
+        determines how strict to be for determination of positive and negative dataset respectively based on the distribution of ratios in the data
+    zero_tolerance: bool
+        if True, negative dataset only includes sequences with ratio 0 (ignoring percentile cutoff). default False
+    isolated_replicates: bool
+        if True and data_type is 'illumina', identifies percentile cutoffs based on individual replicates instead of pooling. default False
+    
+    Outputs
+    -------
+    positive_labels: dataframe
+        dataset of positive sequences
+    negative_labels: dataframe
+        dataset of negative sequences
+    '''
+    binary_data = input_data.copy()
+    try:
+        num_replicates = int(len(binary_data.columns) / 2)
+    except:
+        print('odd number of columns submitted')
+        return None
+    
+    replicates = ['A','B','C','D','E','F'][:num_replicates]
+    negative_column = 'low_'
+    positive_column = 'high_'
+    
+    #convert read counts to frequencies and frequencies to ratios
+    for r in replicates:
+        binary_data[positive_column+r] = binary_data[positive_column+r]/binary_data[positive_column+r].sum(axis=0)
+        binary_data[negative_column+r] = binary_data[negative_column+r]/binary_data[negative_column+r].sum(axis=0)
+        binary_data['ratio_' + r] = np.where(binary_data[negative_column+r] == 0, binary_data[positive_column+r] / (binary_data[binary_data[negative_column+r] != 0][negative_column+r].min(axis=0)), binary_data[positive_column+r] / binary_data[negative_column+r])
+    
+    #remove ratios if they're zero
+    for r in replicates:
+        binary_data.loc[(binary_data['low_' + r] == 0) & (binary_data['high_' + r] == 0),'ratio_'+r] = np.nan
+        
+    #drop rows where all ratios are nan
+    binary_data = binary_data.loc[pd.isnull(binary_data[['ratio_' + r for r in replicates]]).sum(axis=1) < num_replicates]
+    
+    #if pacbio, group identical sequences by ratios and calculate statistics
+    if data_type == 'pacbio':        
+        df1 = pd.DataFrame(index=binary_data.index.unique(),columns=binary_data.columns)
+        binary_data['ratios'] = binary_data[['ratio_' + r for r in replicates]].values.tolist()
+        df1['ratios'] = binary_data.groupby('sequence')['ratios'].apply(lambda x: list([item for sublist in x for item in sublist]))
+        df1 = df1.drop(columns=df1.columns[:-1])
+        df1['ratios'] = df1['ratios'].apply(lambda x: [i for i in x if not np.isnan(i)])
+        df1['mean'] = df1['ratios'].apply(lambda x: np.nanmean(x))
+        df1['count'] = df1['ratios'].apply(lambda x: len(x))
+        binary_data = df1
+    elif data_type == 'illumina':
+        binary_data['ratios'] = binary_data[['ratio_' + r for r in replicates]].values.tolist()
+        binary_data['ratios'] = binary_data['ratios'].apply(lambda x: [i for i in x if not np.isnan(i)])
+        binary_data['mean'] = binary_data['ratios'].apply(lambda x: np.nanmean(x))
+        binary_data['count'] = binary_data['ratios'].apply(lambda x: len(x))
+        
+    #apply filters to the data
+    if isolated_replicates and data_type == 'illumina':
+        positive_labels = binary_data.loc[(binary_data[['ratio_' + r for r in replicates]] >= binary_data[['ratio_' + r for r in replicates]].quantile(percentile_cutoff[0])).sum(axis=1) >= replicate_cutoff[0]]
+    else:
+        positive_labels = binary_data.loc[(binary_data['mean'] > binary_data['mean'].quantile(percentile_cutoff[0])) & (binary_data['count'] >= replicate_cutoff[0])]
+        
+    if zero_tolerance:
+        negative_labels = binary_data.loc[(binary_data['mean'] == 0) & (binary_data['count'] >= replicate_cutoff[1])]
+    else:
+        negative_labels = binary_data.loc[(binary_data['mean'] < binary_data['mean'].quantile(percentile_cutoff[1])) & (binary_data['count'] >= replicate_cutoff[1])]
+    
+    return positive_labels[['mean']],negative_labels[['mean']]
