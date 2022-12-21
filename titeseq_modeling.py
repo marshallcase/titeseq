@@ -76,7 +76,34 @@ class ModelTester:
             
                 # Print the score
                 print(f"{modeltype} mode : {model.__class__.__name__}: {score:.2f}")
+                
+    def test_models_paired(self,classifier_models,regressor_models):
+        '''
+        test_models_paired: given two lists of classification and regression models, train them on binary and continuous datasets. each model
+        needs to implement the following methods: fit(X,y), score(X,y), and __name__()
+        
+        Parameters:
+        -----------
+        classifier_models: list of models (i.e. [ linear_model.RidgeClassifier(alpha=0.5),DecisionTreeClassifier(),RandomForestClassifier()])
+        regressor_models: list of models (i.e. [linear_model.Ridge(alpha=0.5),DecisionTreeRegressor(),RandomForestRegressor()])
+        
+        Outputs:
+        --------
+        none
+        
+        '''
+        # Test each model
+        for classifier,regressor in zip(classifier_models,regressor_models): 
+            ##CLASSIFICATION
+            classifier.fit(self.X_train, self.y_train_binary)
+            score = model.score(self.X_test, self.y_test_binary)
+            print(f"{type(classifier).__name__} mode : {model.__class__.__name__}: {score:.2f}")
             
+            ##REGRESSION
+            regressor.fit(self.X_train, self.y_train_continuous)
+            score = model.score(self.X_test, self.y_test_continuous)
+            print(f"{type(regressor).__name__} mode : {model.__class__.__name__}: {score:.2f}")
+
 
             
 def main():
