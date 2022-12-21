@@ -435,36 +435,26 @@ def mutate_sequence(background,aa_substitutions,verbose=False):
             new_seq = new_seq[:pos] + mut + new_seq[pos + 1:]
     return new_seq
 
-def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutoff,zero_tolerance=False,isolated_replicates=False):
+
+def getRatios(input_data,data_type):
     '''
-    generateBinaryDataset: given a titeseq dataset, convert it to a binary dataset based on its sequencing type and various cutoff parameters
+    getRatios: given a titeseq dataset, calculate ratios for sequences and return processed data
     
     Parameters
     ----------
-    
     input_data: dataframe
         dataframe with the sequence as the index and two columns (per replicate if illumina), high_R and low_R where R is each replicate lettered from A->Z
     data_type: str
-        if PacBio long read coupled with Illumina for barcode depth (like Bloom 2022), 'pacbio'
-        if pure Illumina (like Kinney 2016), 'illumina'
-    replicate_cutoff: tuple of (float,float)
-        determines how strict to be for determination of positive and negative dataset respectively based on # of replicates
-        if data_type = 'illumina', this is based on the number of replicates of the entire illumina dataset since identical sequences are pooled
-        if data_type = 'pacbio', this can be any number depending on how many identical sequences were prepared in the barcoding process
-    percentile_cutoff: tuple of (float,float)
-        determines how strict to be for determination of positive and negative dataset respectively based on the distribution of ratios in the data
-    zero_tolerance: bool
-        if True, negative dataset only includes sequences with ratio 0 (ignoring percentile cutoff). default False
-    isolated_replicates: bool
-        if True and data_type is 'illumina', identifies percentile cutoffs based on individual replicates instead of pooling. default False
+        if 'duplicated', assumes there are duplicate sequences (due to independent barcodes or degenerate codons) (like Bloom 2022 or Kinney 2016)
+        if 'nonduplicated', assumes there are no duplicate sequences  
     
     Outputs
     -------
-    positive_labels: dataframe
-        dataset of positive sequences
-    negative_labels: dataframe
-        dataset of negative sequences
+    output_data: dataframe
+        dataframe with sequences and ratios, mean, and count statistics calculated
+    
     '''
+    #create copy to prevent dataframe issues in scripts
     binary_data = input_data.copy()
     try:
         num_replicates = int(len(binary_data.columns) / 2)
@@ -490,7 +480,7 @@ def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutof
     binary_data = binary_data.loc[pd.isnull(binary_data[['ratio_' + r for r in replicates]]).sum(axis=1) < num_replicates]
     
     #if pacbio, group identical sequences by ratios and calculate statistics
-    if data_type == 'pacbio':        
+    if data_type == 'duplicated':        
         df1 = pd.DataFrame(index=binary_data.index.unique(),columns=binary_data.columns)
         binary_data['ratios'] = binary_data[['ratio_' + r for r in replicates]].values.tolist()
         df1['ratios'] = binary_data.groupby('sequence')['ratios'].apply(lambda x: list([item for sublist in x for item in sublist]))
@@ -499,14 +489,50 @@ def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutof
         df1['mean'] = df1['ratios'].apply(lambda x: np.nanmean(x))
         df1['count'] = df1['ratios'].apply(lambda x: len(x))
         binary_data = df1
-    elif data_type == 'illumina':
+    elif data_type == 'nonduplicated':
         binary_data['ratios'] = binary_data[['ratio_' + r for r in replicates]].values.tolist()
         binary_data['ratios'] = binary_data['ratios'].apply(lambda x: [i for i in x if not np.isnan(i)])
         binary_data['mean'] = binary_data['ratios'].apply(lambda x: np.nanmean(x))
         binary_data['count'] = binary_data['ratios'].apply(lambda x: len(x))
         
+    return binary_data
+
+def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutoff,zero_tolerance=False,isolated_replicates=False):
+    '''
+    generateBinaryDataset: given a titeseq dataset, convert it to a binary dataset based on its sequencing type and various cutoff parameters
+    
+    Parameters
+    ----------
+    input_data: dataframe
+        dataframe with the sequence as the index and two columns (per replicate if illumina), high_R and low_R where R is each replicate lettered from A->Z
+    data_type: str
+        if 'duplicated', assumes there are duplicate sequences (due to independent barcodes or degenerate codons) (like Bloom 2022 or Kinney 2016)
+        if 'nonduplicated', assumes there are no duplicate sequences
+    replicate_cutoff: tuple of (float,float)
+        determines how strict to be for determination of positive and negative dataset respectively based on # of replicates
+        if data_type = 'nonduplicated', this is based on the number of replicates of the entire dataset since identical sequences are pooled
+        if data_type = 'duplicated', this can be any number depending on how many identical sequences were prepared in the barcoding process
+    percentile_cutoff: tuple of (float,float)
+        determines how strict to be for determination of positive and negative dataset respectively based on the distribution of ratios in the data
+    zero_tolerance: bool
+        if True, negative dataset only includes sequences with ratio 0 (ignoring percentile cutoff). default False
+    isolated_replicates: bool
+        if True and data_type is 'nonduplicated', identifies percentile cutoffs based on individual replicates instead of pooling. default False
+    
+    Outputs
+    -------
+    positive_labels: dataframe
+        dataset of positive sequences
+    negative_labels: dataframe
+        dataset of negative sequences
+    '''
+    #create copy to prevent dataframe issues in scripts
+    binary_data = input_data.copy()
+    #get ratios
+    binary_data = getRatios(binary_data,data_type)
+        
     #apply filters to the data
-    if isolated_replicates and data_type == 'illumina':
+    if isolated_replicates and data_type == 'nonduplicated':
         positive_labels = binary_data.loc[(binary_data[['ratio_' + r for r in replicates]] >= binary_data[['ratio_' + r for r in replicates]].quantile(percentile_cutoff[0])).sum(axis=1) >= replicate_cutoff[0]]
     else:
         positive_labels = binary_data.loc[(binary_data['mean'] > binary_data['mean'].quantile(percentile_cutoff[0])) & (binary_data['count'] >= replicate_cutoff[0])]
@@ -517,3 +543,74 @@ def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutof
         negative_labels = binary_data.loc[(binary_data['mean'] < binary_data['mean'].quantile(percentile_cutoff[1])) & (binary_data['count'] >= replicate_cutoff[1])]
     
     return positive_labels[['mean']],negative_labels[['mean']]
+
+def plotDatasetCutoff(input_data,data_type,replicate_cutoffs,percentile_cutoffs,zero_tolerance=True):
+    '''
+    plotDatasetCutoff: plot the size of a simulated binary dataset based on various cutoff parameters
+    
+    Parameters
+    ----------
+    input_data: dataframe
+        dataframe with the sequence as the index and two columns (per replicate if illumina), high_R and low_R where R is each replicate lettered from A->Z
+    data_type: str
+        if 'duplicated', assumes there are duplicate sequences (due to independent barcodes or degenerate codons) (like Bloom 2022 or Kinney 2016)
+        if 'nonduplicated', assumes there are no duplicate sequences
+    replicate_cutoffs: array of floats 0<= x <= 1
+        determines how strict to be for determination of positive and negative dataset respectively based on # of replicates
+    percentile_cutoffs: array of floats 0<= x <= 1
+        determines how strict to be for determination of positive and negative dataset respectively based on the distribution of ratios in the data
+    zero_tolerance: bool
+        if True, includes the data point that ignores percentile cutoff and only takes negative datapoints with 0 ratio. default True
+    
+    
+    Outputs:
+    --------
+    None
+    
+    '''
+    #create copy to prevent dataframe issues in scripts
+    binary_data = input_data.copy()
+    #get ratios
+    binary_data = getRatios(binary_data,data_type)
+    #add zero tolerance to negative dataset if applicable
+    if zero_tolerance:
+        percentile_cutoffs.append('zero_tolerance')
+    
+    #plot results
+    fig,axes = plt.subplots(ncols=2,nrows=1,figsize=(20,10))
+    
+    for k,ax in enumerate(np.ravel(axes)):
+        datasize_df = pd.DataFrame(index=percentile_cutoffs,columns=replicate_cutoffs)
+        #get stats
+        for i,n in enumerate(replicate_cutoffs): #iterate through replicate cutoffs
+            for j,c in enumerate(percentile_cutoffs): #iterate through percentile cutoffs
+                data_slice = binary_data[['mean','count']]
+                if k == 0: #negative
+                    if c == 'zero_tolerance':
+                        data_slice = data_slice.loc[(data_slice['mean'] == 0) & (data_slice['count'] > n)]
+                    else:
+                        data_slice = data_slice.loc[(data_slice['mean'] < data_slice['mean'].quantile(c)) & (data_slice['count'] > n)]
+                    label='negative'
+                elif k == 1: #positive
+                    if c == 'zero_tolerance':
+                        data_slice = []
+                    else:
+                        data_slice = data_slice.loc[(data_slice['mean'] > data_slice['mean'].quantile(c)) & (data_slice['count'] > n)]
+                    label='positive'
+                    
+                datasize_df.loc[c,n] = len(data_slice)
+            
+        pos = ax.imshow(datasize_df.values.astype('int'))
+        xticks = range(len(datasize_df.columns))
+        yticks = range(len(datasize_df.index))
+        ax.set_xticks(xticks)
+        ax.set_yticks(yticks)
+        ax.set_xticklabels(datasize_df.columns)
+        ax.set_yticklabels(datasize_df.index)
+        ax.set_xlabel('# Replicate Cutoff')
+        ax.set_ylabel('Ratio percentile cutoff')
+        cbar = fig.colorbar(pos, ax=ax)
+        cbar.set_label('Number of datapoints after filtering')
+        for (i, j), z in np.ndenumerate(datasize_df):
+            ax.text(j, i, str(z), ha='center', va='center',color='white')
+        ax.set_title(f'size of {label} dataset')
