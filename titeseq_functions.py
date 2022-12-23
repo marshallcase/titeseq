@@ -25,6 +25,25 @@ ids = ['B1351','E484K','Wuhan_Hu_1','N501Y','Delta']
 sequences = [B1351_seq,E484K_seq,Wuhan_Hu_1_seq,N5O1Y_seq,delta_seq]
 seq_dict = dict(zip(ids,sequences))
 
+def getCharsFromString(string,indices):
+    '''
+    getCharsFromString: given a sequence, return characters in string according to indices
+    Parameters
+    ----------
+    string: string
+    indices: list of indices
+    Outputs
+    -------
+    output: characters in string according to indices
+    '''
+    
+    try:
+        output = [string[i] for i in indices]
+    except IndexError: 
+        print ('string index out of range')
+        output = []
+    return ''.join(output)
+
 def preprocess(values_counts,values,index,columns):
     '''
     preprocess: convert dataframe from the following format:

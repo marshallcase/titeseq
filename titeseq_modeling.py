@@ -96,14 +96,15 @@ class ModelTester:
         for classifier,regressor in zip(classifier_models,regressor_models): 
             ##CLASSIFICATION
             classifier.fit(self.X_train, self.y_train_binary)
-            score = model.score(self.X_test, self.y_test_binary)
-            print(f"{type(classifier).__name__} mode : {model.__class__.__name__}: {score:.2f}")
+            score = classifier.score(self.X_test, self.y_test_binary)
+            print(f"{'Classifier'} mode : {classifier.__class__.__name__}: {score:.2f}")
             
             ##REGRESSION
             regressor.fit(self.X_train, self.y_train_continuous)
-            score = model.score(self.X_test, self.y_test_continuous)
-            print(f"{type(regressor).__name__} mode : {model.__class__.__name__}: {score:.2f}")
-
+            score = regressor.score(self.X_test, self.y_test_continuous)
+            print(f"{'Regressor'} mode : {regressor.__class__.__name__}: {score:.2f}")
+            
+    #TODO: write model tester with hyperparameter tuning
 
             
 def main():
