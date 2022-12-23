@@ -9,7 +9,7 @@ class ProteinOneHotEncoder(OneHotEncoder):
     def __init__(self, *args, **kwargs):
         # Initialize the superclass (OneHotEncoder) with any arguments passed in
         super().__init__(*args, **kwargs)
-        self.all_AA = list(set('ACDEFGHIKLMNPQRSTVWY'))
+        self.all_AA = list(set('ACDEFGHIKLMNPQRSTVWY*'))
         self.AA_to_index = {aa: i for i, aa in enumerate(self.all_AA)}
         self.index_to_AA = {v: k for k, v in self.AA_to_index.items()}
 

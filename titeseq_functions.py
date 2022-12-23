@@ -529,7 +529,10 @@ def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutof
     #create copy to prevent dataframe issues in scripts
     binary_data = input_data.copy()
     #get ratios
-    binary_data = getRatios(binary_data,data_type)
+    if 'ratios' in binary_data.columns:
+        pass
+    else:
+        binary_data = getRatios(binary_data,data_type)
         
     #apply filters to the data
     if isolated_replicates and data_type == 'nonduplicated':
@@ -542,7 +545,10 @@ def generateBinaryDataset(input_data,data_type,replicate_cutoff,percentile_cutof
     else:
         negative_labels = binary_data.loc[(binary_data['mean'] < binary_data['mean'].quantile(percentile_cutoff[1])) & (binary_data['count'] >= replicate_cutoff[1])]
     
-    return positive_labels[['mean']],negative_labels[['mean']]
+    positive_labels['label'] = 1
+    negative_labels['label'] = 0
+    
+    return positive_labels[['mean','label']],negative_labels[['mean','label']]
 
 def plotDatasetCutoff(input_data,data_type,replicate_cutoffs,percentile_cutoffs,zero_tolerance=True):
     '''
@@ -571,7 +577,10 @@ def plotDatasetCutoff(input_data,data_type,replicate_cutoffs,percentile_cutoffs,
     #create copy to prevent dataframe issues in scripts
     binary_data = input_data.copy()
     #get ratios
-    binary_data = getRatios(binary_data,data_type)
+    if 'ratios' in binary_data.columns:
+        pass
+    else:
+        binary_data = getRatios(binary_data,data_type)
     #add zero tolerance to negative dataset if applicable
     if zero_tolerance:
         percentile_cutoffs.append('zero_tolerance')
